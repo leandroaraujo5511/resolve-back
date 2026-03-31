@@ -1,0 +1,56 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+
+export class PresignUploadDto {
+  @ApiProperty({ example: 'foto-buraco.jpg' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(240)
+  filename: string;
+
+  @ApiProperty({ example: 'image/jpeg' })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  contentType: string;
+
+  /** Super admin (painel): tenant onde o arquivo será armazenado */
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
+}
+
+export class PresignUploadResponseDto {
+  @ApiProperty({ description: 'URL assinada para PUT do objeto' })
+  url!: string;
+
+  @ApiProperty()
+  key!: string;
+
+  @ApiProperty()
+  bucket!: string;
+
+  @ApiProperty({ example: 300 })
+  expiresIn!: number;
+
+  @ApiProperty({ example: 'PUT' })
+  method!: 'PUT';
+}
+
+export class PresignGetResponseDto {
+  @ApiProperty({ description: 'URL assinada para GET do objeto' })
+  url!: string;
+
+  @ApiProperty()
+  key!: string;
+
+  @ApiProperty()
+  bucket!: string;
+
+  @ApiProperty({ example: 300 })
+  expiresIn!: number;
+
+  @ApiProperty({ example: 'GET' })
+  method!: 'GET';
+}

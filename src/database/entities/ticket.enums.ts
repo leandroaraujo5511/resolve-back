@@ -1,0 +1,15 @@
+export enum TicketStatus {
+  ABERTO = 'ABERTO',
+  EM_ANALISE = 'EM_ANALISE',
+  EM_ANDAMENTO = 'EM_ANDAMENTO',
+  AGUARDANDO_USUARIO = 'AGUARDANDO_USUARIO',
+  RESOLVIDO = 'RESOLVIDO',
+  CANCELADO = 'CANCELADO',
+}
+
+export enum TicketPriority {
+  BAIXA = 'BAIXA',
+  MEDIA = 'MEDIA',
+  ALTA = 'ALTA',
+  URGENTE = 'URGENTE',
+}
