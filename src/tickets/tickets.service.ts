@@ -474,7 +474,7 @@ export class TicketsService {
           ticket.citizenId,
           `Chamado ${ticket.protocol}`,
           body,
-          { ticketId: ticket.id },
+          { ticketId: ticket.id, ticketProtocol: ticket.protocol },
         );
       }
     }
@@ -543,7 +543,7 @@ export class TicketsService {
         ticket.citizenId,
         `Chamado ${ticket.protocol}`,
         body,
-        { ticketId: ticket.id },
+        { ticketId: ticket.id, ticketProtocol: ticket.protocol },
       );
     }
 

@@ -9,6 +9,10 @@ type ExpoPushMessage = {
   body: string;
   sound?: 'default' | null;
   data?: Record<string, string>;
+  /** Android/iOS: alta prioridade para entregar com app em segundo plano / doze */
+  priority?: 'default' | 'normal' | 'high';
+  /** Android: deve existir no app (`default` criado pelo expo-notifications) */
+  channelId?: string;
 };
 
 @Injectable()
@@ -39,12 +43,21 @@ export class ExpoPushService {
       return;
     }
 
+    const dataPayload: Record<string, string> = {};
+    if (data) {
+      for (const [k, v] of Object.entries(data)) {
+        dataPayload[k] = v === undefined || v === null ? '' : String(v);
+      }
+    }
+
     const message: ExpoPushMessage = {
       to: expoPushToken.trim(),
       title,
       body,
       sound: 'default',
-      data: data ?? {},
+      data: dataPayload,
+      priority: 'high',
+      channelId: 'default',
     };
 
     try {
