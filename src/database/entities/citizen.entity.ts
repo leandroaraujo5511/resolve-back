@@ -36,6 +36,10 @@ export class Citizen {
   @Column({ length: 120 })
   name: string;
 
+  /** Data de nascimento (AAAA-MM-DD). Obrigatória em novos cadastros; legado pode ser null. */
+  @Column({ type: 'date', nullable: true })
+  birthDate: string | Date | null;
+
   /** Key no storage (R2) da foto de perfil; URL assinada via presign-get no app. */
   @Column({ type: 'varchar', length: 512, nullable: true })
   avatarKey: string | null;

@@ -33,6 +33,8 @@ import {
 } from './dto/citizen-me.response.dto';
 import { CitizenExpoPushTokenDto } from './dto/citizen-expo-push-token.dto';
 import { CitizenUpdateProfileDto } from './dto/citizen-update-profile.dto';
+import { CitizenPasswordResetCompleteDto } from './dto/citizen-password-reset-complete.dto';
+import { CitizenPhoneRecoveryDto } from './dto/citizen-phone-recovery.dto';
 
 @ApiTags('Auth — Cidadão')
 @Controller('auth/citizen')
@@ -58,7 +60,8 @@ export class CitizenAuthController {
   @ApiOperation({
     summary: 'Solicita código OTP (6 dígitos) para login',
     description:
-      'Em desenvolvimento o código aparece no log do servidor (OTP_LOG_CODE_IN_CONSOLE).',
+      'Com COMMUNICATION_GATEWAY_* configurado, o código é enviado por WhatsApp via gateway. ' +
+      'Sem gateway, o código fica no log (OTP_LOG_CODE_IN_CONSOLE) e opcionalmente na resposta (OTP_RETURN_CODE_IN_RESPONSE).',
   })
   @ApiBody({ type: CitizenSendOtpDto })
   @ApiOkResponse({
@@ -93,10 +96,62 @@ export class CitizenAuthController {
     return this.citizenAuthService.loginWithPassword(dto);
   }
 
-  @ApiOperation({ summary: 'Perfil do cidadão autenticado' })
+  @ApiOperation({
+    summary: 'Recuperação de senha — validar código do WhatsApp',
+    description:
+      'Use o mesmo código enviado por POST /auth/citizen/otp/send para este telefone. ' +
+      'Retorna um resetToken (JWT) para POST /auth/citizen/password-reset/complete.',
+  })
+  @ApiBody({ type: CitizenLoginDto })
+  @ApiOkResponse({
+    schema: { example: { resetToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' } },
+  })
+  @ApiUnauthorizedResponse({ description: 'Código inválido ou expirado' })
+  @HttpCode(HttpStatus.OK)
+  @Post('password-reset/verify-code')
+  verifyPasswordResetCode(@Body() dto: CitizenLoginDto) {
+    return this.citizenAuthService.verifyPasswordResetCode(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Recuperação de senha — definir nova senha',
+    description: 'Envie o resetToken obtido em password-reset/verify-code.',
+  })
+  @ApiBody({ type: CitizenPasswordResetCompleteDto })
+  @ApiOkResponse({
+    schema: { example: { message: 'Senha alterada com sucesso...' } },
+  })
+  @ApiUnauthorizedResponse({ description: 'Token de recuperação inválido ou expirado' })
+  @HttpCode(HttpStatus.OK)
+  @Post('password-reset/complete')
+  completePasswordReset(@Body() dto: CitizenPasswordResetCompleteDto) {
+    return this.citizenAuthService.completePasswordReset(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Mudou de WhatsApp — atualizar telefone',
+    description:
+      'Confirma data de nascimento e número antigo; atualiza para o novo número se os dados baterem com o cadastro.',
+  })
+  @ApiBody({ type: CitizenPhoneRecoveryDto })
+  @ApiOkResponse({
+    schema: { example: { message: 'Telefone atualizado...' } },
+  })
+  @ApiConflictResponse({ description: 'Novo número já cadastrado' })
+  @HttpCode(HttpStatus.OK)
+  @Post('phone-recovery')
+  recoverPhone(@Body() dto: CitizenPhoneRecoveryDto) {
+    return this.citizenAuthService.recoverPhone(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Perfil do cidadão autenticado',
+    description:
+      'Retorna o perfil e um JWT novo (renovação deslizante). Guarde o token no cliente.',
+  })
   @ApiBearerAuth()
-  @ApiOkResponse({ type: CitizenMeResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Token cidadão inválido' })
+  @ApiOkResponse({ type: CitizenLoginResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token cidadão inválido ou expirado' })
   @UseGuards(CitizenJwtAuthGuard)
   @Get('me')
   me(@CurrentCitizen() citizen: CitizenJwtPayload) {

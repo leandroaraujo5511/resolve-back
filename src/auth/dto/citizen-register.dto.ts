@@ -23,6 +23,14 @@ export class CitizenRegisterDto {
   @MaxLength(120)
   name: string;
 
+  @ApiProperty({ example: '1990-05-15', description: 'Data de nascimento (AAAA-MM-DD)' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'Informe a data de nascimento como AAAA-MM-DD',
+  })
+  birthDate: string;
+
   @ApiProperty({ example: 'senha123', minLength: 6 })
   @IsString()
   @MinLength(6)

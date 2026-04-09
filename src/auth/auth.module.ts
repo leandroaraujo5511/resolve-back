@@ -14,10 +14,12 @@ import { City } from '../database/entities/city.entity';
 import { Company } from '../database/entities/company.entity';
 import { CitizenJwtStrategy } from './strategies/citizen-jwt.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
   imports: [
     ConfigModule,
+    CommunicationModule,
     UsersModule,
     TypeOrmModule.forFeature([Citizen, City, CitizenOtp, Company]),
     PassportModule.register({ defaultStrategy: 'jwt' }),

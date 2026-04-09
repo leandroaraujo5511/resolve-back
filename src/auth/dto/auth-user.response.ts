@@ -46,8 +46,23 @@ export class LoginResponseDto {
   user: AuthUserResponseDto;
 
   @ApiProperty({
+    description: 'JWT de acesso (Authorization: Bearer)',
     example:
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIuLi4iLCJjb21wYW55SWQiOiIuLi4ifQ.signature',
   })
   token: string;
+
+  @ApiProperty({
+    description: 'JWT de renovação (POST /auth/refresh). Rotacionado a cada refresh.',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  })
+  refreshToken: string;
+}
+
+export class RefreshResponseDto {
+  @ApiProperty({ description: 'Novo access token' })
+  token!: string;
+
+  @ApiProperty({ description: 'Novo refresh token' })
+  refreshToken!: string;
 }

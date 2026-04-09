@@ -21,6 +21,13 @@ export class CitizenMeResponseDto {
 
   @ApiProperty({
     required: false,
+    example: '1990-05-15',
+    description: 'AAAA-MM-DD quando informado no cadastro',
+  })
+  birthDate?: string;
+
+  @ApiProperty({
+    required: false,
     description: 'Key da foto de perfil no storage (resolver com presign-get)',
   })
   avatarKey?: string | null;

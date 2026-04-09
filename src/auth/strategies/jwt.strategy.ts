@@ -22,6 +22,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         'Use o token do painel nesta rota (não o token do app cidadão)',
       );
     }
+    if (payload.typ === 'refresh') {
+      throw new UnauthorizedException(
+        'Use o access token nas rotas do painel (não o refresh token)',
+      );
+    }
     return payload;
   }
 }
