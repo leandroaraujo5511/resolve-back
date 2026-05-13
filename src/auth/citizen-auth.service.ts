@@ -26,6 +26,9 @@ import { CitizenPhoneRecoveryDto } from './dto/citizen-phone-recovery.dto';
 import type { CitizenMeResponseDto } from './dto/citizen-me.response.dto';
 import type { CitizenJwtPayload } from './interfaces/citizen-jwt.interface';
 import { CommunicationGatewayService } from '../communication/communication-gateway.service';
+import { Feedback } from '../database/entities/feedback.entity';
+import { Ticket } from '../database/entities/ticket.entity';
+import { CitizenDeleteAccountDto } from './dto/citizen-delete-account.dto';
 
 @Injectable()
 export class CitizenAuthService {
@@ -207,7 +210,11 @@ export class CitizenAuthService {
       throw new ConflictException('Este número já está cadastrado');
     }
 
-    this.assertReasonableBirthDate(dto.birthDate);
+    let birth: string | null = null;
+    if (dto.birthDate) {
+      this.assertReasonableBirthDate(dto.birthDate);
+      birth = dto.birthDate;
+    }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const citizen = this.citizenRepository.create({
@@ -215,7 +222,7 @@ export class CitizenAuthService {
       cityId: city.id,
       phone,
       name: dto.name.trim(),
-      birthDate: dto.birthDate,
+      birthDate: birth,
       passwordHash,
     });
     await this.citizenRepository.save(citizen);
@@ -367,8 +374,6 @@ export class CitizenAuthService {
       throw new BadRequestException('O novo número deve ser diferente do antigo.');
     }
 
-    this.assertReasonableBirthDate(dto.birthDate);
-
     const citizen = await this.citizenRepository.findOne({
       where: { phone: oldPhone },
     });
@@ -379,10 +384,25 @@ export class CitizenAuthService {
     }
 
     const storedBirth = this.birthDateToYyyyMmDd(citizen.birthDate);
-    if (!storedBirth || storedBirth !== dto.birthDate) {
-      throw new BadRequestException(
-        'Os dados informados não conferem com o cadastro.',
-      );
+    if (storedBirth) {
+      if (!dto.birthDate || dto.birthDate !== storedBirth) {
+        throw new BadRequestException(
+          'Os dados informados não conferem com o cadastro.',
+        );
+      }
+      this.assertReasonableBirthDate(dto.birthDate);
+    } else {
+      if (!dto.password?.trim()) {
+        throw new BadRequestException(
+          'Informe sua senha atual para confirmar sua identidade (seu cadastro não possui data de nascimento).',
+        );
+      }
+      const pwdOk = await bcrypt.compare(dto.password, citizen.passwordHash);
+      if (!pwdOk) {
+        throw new BadRequestException(
+          'Os dados informados não conferem com o cadastro.',
+        );
+      }
     }
 
     const taken = await this.citizenRepository.findOne({
@@ -508,6 +528,43 @@ export class CitizenAuthService {
     const token = await this.issueCitizenJwt(citizen);
 
     return { user, token };
+  }
+
+  async deleteAccount(
+    jwtPayload: CitizenJwtPayload,
+    dto: CitizenDeleteAccountDto,
+  ): Promise<{ message: string }> {
+    const citizen = await this.citizenRepository.findOne({
+      where: { id: jwtPayload.sub },
+    });
+    if (!citizen || citizen.companyId !== jwtPayload.companyId) {
+      throw new UnauthorizedException('Sessão inválida');
+    }
+
+    const pwdOk = await bcrypt.compare(dto.password, citizen.passwordHash);
+    if (!pwdOk) {
+      throw new UnauthorizedException('Senha incorreta.');
+    }
+
+    const id = citizen.id;
+    const phone = citizen.phone;
+
+    await this.citizenRepository.manager.transaction(async (trx) => {
+      await trx.delete(Feedback, { citizenId: id });
+      await trx.update(
+        Ticket,
+        { citizenId: id },
+        {
+          citizenId: null,
+          citizenName: 'Conta encerrada',
+          citizenPhone: '0000000000',
+        },
+      );
+      await trx.delete(CitizenOtp, { phone });
+      await trx.delete(Citizen, { id });
+    });
+
+    return { message: 'Sua conta foi excluída permanentemente.' };
   }
 
   async registerExpoPushToken(

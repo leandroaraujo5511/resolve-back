@@ -1,6 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   Matches,
@@ -23,13 +25,20 @@ export class CitizenRegisterDto {
   @MaxLength(120)
   name: string;
 
-  @ApiProperty({ example: '1990-05-15', description: 'Data de nascimento (AAAA-MM-DD)' })
+  @ApiPropertyOptional({
+    example: '1990-05-15',
+    description:
+      'Data de nascimento (AAAA-MM-DD), opcional. Se informada, deve ser uma data válida.',
+  })
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, {
     message: 'Informe a data de nascimento como AAAA-MM-DD',
   })
-  birthDate: string;
+  birthDate?: string;
 
   @ApiProperty({ example: 'senha123', minLength: 6 })
   @IsString()

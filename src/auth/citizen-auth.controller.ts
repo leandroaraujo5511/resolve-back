@@ -35,6 +35,7 @@ import { CitizenExpoPushTokenDto } from './dto/citizen-expo-push-token.dto';
 import { CitizenUpdateProfileDto } from './dto/citizen-update-profile.dto';
 import { CitizenPasswordResetCompleteDto } from './dto/citizen-password-reset-complete.dto';
 import { CitizenPhoneRecoveryDto } from './dto/citizen-phone-recovery.dto';
+import { CitizenDeleteAccountDto } from './dto/citizen-delete-account.dto';
 
 @ApiTags('Auth — Cidadão')
 @Controller('auth/citizen')
@@ -43,6 +44,8 @@ export class CitizenAuthController {
 
   @ApiOperation({
     summary: 'Cadastro do cidadão (telefone, nome, senha, município)',
+    description:
+      'Data de nascimento é opcional. Quando informada, deve estar no formato AAAA-MM-DD.',
   })
   @ApiBody({ type: CitizenRegisterDto })
   @ApiCreatedResponse({
@@ -131,7 +134,8 @@ export class CitizenAuthController {
   @ApiOperation({
     summary: 'Mudou de WhatsApp — atualizar telefone',
     description:
-      'Confirma data de nascimento e número antigo; atualiza para o novo número se os dados baterem com o cadastro.',
+      'Se o cadastro tiver data de nascimento, envie-a (igual ao cadastro). ' +
+      'Se não tiver data no cadastro, envie a senha atual em `password` para confirmar identidade.',
   })
   @ApiBody({ type: CitizenPhoneRecoveryDto })
   @ApiOkResponse({
@@ -200,5 +204,24 @@ export class CitizenAuthController {
       citizen.sub,
       dto.expoPushToken,
     );
+  }
+
+  @ApiOperation({
+    summary: 'Excluir conta permanentemente',
+    description:
+      'Exige a senha atual. Remove a conta, apaga sugestões (feedbacks) do cidadão e desvincula chamados, mantendo-os no município com dados anonimizados.',
+  })
+  @ApiBody({ type: CitizenDeleteAccountDto })
+  @ApiBearerAuth()
+  @ApiOkResponse({ schema: { example: { message: 'Sua conta foi excluída permanentemente.' } } })
+  @ApiUnauthorizedResponse({ description: 'Token inválido ou senha incorreta' })
+  @UseGuards(CitizenJwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('account/delete')
+  deleteAccount(
+    @CurrentCitizen() citizen: CitizenJwtPayload,
+    @Body() dto: CitizenDeleteAccountDto,
+  ) {
+    return this.citizenAuthService.deleteAccount(citizen, dto);
   }
 }

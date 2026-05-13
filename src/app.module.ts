@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { SupportController } from './support/support.controller';
 import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
 import { UsersModule } from './users/users.module';
@@ -35,7 +36,7 @@ import { AppIssuesModule } from './app-issues/app-issues.module';
     ReportsModule,
     AppIssuesModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, SupportController],
   providers: [AppService],
 })
 export class AppModule {}
