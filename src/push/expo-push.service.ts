@@ -9,11 +9,23 @@ type ExpoPushMessage = {
   body: string;
   sound?: 'default' | null;
   data?: Record<string, string>;
-  /** Android/iOS: alta prioridade para entregar com app em segundo plano / doze */
   priority?: 'default' | 'normal' | 'high';
-  /** Android: deve existir no app (`default` criado pelo expo-notifications) */
   channelId?: string;
+  android?: {
+    channelId?: string;
+    priority?: 'default' | 'normal' | 'high';
+    /** Segundos até a mensagem expirar no FCM se o dispositivo estiver offline */
+    ttl?: number;
+  };
 };
+
+type ExpoPushTicket =
+  | { status: 'ok'; id?: string }
+  | {
+      status: 'error';
+      message?: string;
+      details?: { error?: string };
+    };
 
 @Injectable()
 export class ExpoPushService {
@@ -33,14 +45,27 @@ export class ExpoPushService {
     );
   }
 
+  private parseExpoTickets(json: unknown): ExpoPushTicket[] {
+    if (!json || typeof json !== 'object') return [];
+    const data = (json as { data?: unknown }).data;
+    if (Array.isArray(data)) {
+      return data as ExpoPushTicket[];
+    }
+    if (data && typeof data === 'object') {
+      return [data as ExpoPushTicket];
+    }
+    return [];
+  }
+
   async sendToExpoToken(
     expoPushToken: string,
     title: string,
     body: string,
     data?: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!this.isLikelyExpoToken(expoPushToken)) {
-      return;
+      this.logger.warn('Token push ignorado: formato inválido');
+      return false;
     }
 
     const dataPayload: Record<string, string> = {};
@@ -58,6 +83,11 @@ export class ExpoPushService {
       data: dataPayload,
       priority: 'high',
       channelId: 'default',
+      android: {
+        channelId: 'default',
+        priority: 'high',
+        ttl: 86_400,
+      },
     };
 
     try {
@@ -65,28 +95,41 @@ export class ExpoPushService {
         method: 'POST',
         headers: {
           Accept: 'application/json',
+          'Accept-encoding': 'gzip, deflate',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(message),
+        body: JSON.stringify([message]),
       });
 
-      const json = (await res.json().catch(() => null)) as {
-        data?: { status?: string; message?: string; details?: { error?: string } };
-      } | null;
+      const json: unknown = await res.json().catch(() => null);
+      const tickets = this.parseExpoTickets(json);
 
       if (!res.ok) {
         this.logger.warn(
           `Expo push HTTP ${res.status}: ${JSON.stringify(json ?? 'no body')}`,
         );
-        return;
+        return false;
       }
 
-      const err = json?.data?.details?.error ?? json?.data?.message;
-      if (err && err !== 'ok') {
-        this.logger.warn(`Expo push resposta: ${JSON.stringify(json)}`);
+      for (const ticket of tickets) {
+        if (ticket.status === 'error') {
+          const code = ticket.details?.error ?? ticket.message ?? 'unknown';
+          this.logger.warn(
+            `Expo push falhou (${code}): ${JSON.stringify(ticket)}`,
+          );
+          if (
+            code === 'DeviceNotRegistered' ||
+            code === 'InvalidCredentials'
+          ) {
+            return false;
+          }
+        }
       }
+
+      return tickets.some((t) => t.status === 'ok');
     } catch (e) {
       this.logger.warn(`Falha ao enviar push Expo: ${(e as Error).message}`);
+      return false;
     }
   }
 
@@ -104,8 +147,18 @@ export class ExpoPushService {
     });
 
     const token = citizen?.expoPushToken;
-    if (!token) return;
+    if (!token) {
+      this.logger.debug(
+        `Push não enviado: cidadão ${citizenId} sem expoPushToken`,
+      );
+      return;
+    }
 
-    await this.sendToExpoToken(token, title, body, data);
+    const ok = await this.sendToExpoToken(token, title, body, data);
+    if (!ok) {
+      this.logger.warn(
+        `Push não entregue para cidadão ${citizenId} (verifique credenciais EAS / token no banco)`,
+      );
+    }
   }
 }
