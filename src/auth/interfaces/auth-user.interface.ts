@@ -20,4 +20,6 @@ export interface JwtPayload {
   companyCityId?: string | null;
   email: string;
   role: UserRole;
+  /** Presente quando o usuário do painel está vinculado a um departamento. */
+  departmentId?: string | null;
 }

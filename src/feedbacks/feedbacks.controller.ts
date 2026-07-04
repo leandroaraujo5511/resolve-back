@@ -11,6 +11,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -22,6 +23,9 @@ import { CurrentCitizen } from '../auth/decorators/current-citizen.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { CitizenJwtPayload } from '../auth/interfaces/citizen-jwt.interface';
 import type { JwtPayload } from '../auth/interfaces/auth-user.interface';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { UserRole } from '../database/entities/user.entity';
 import { resolvePanelCompanyId } from '../common/tenant-scope';
 import { CreateFeedbackCitizenDto } from './dto/create-feedback-citizen.dto';
 import { ListFeedbacksQueryDto } from './dto/list-feedbacks.query.dto';
@@ -57,12 +61,14 @@ export class FeedbacksController {
   @ApiOperation({
     summary: 'Listar feedbacks (painel)',
     description:
-      'Escopo pelo tenant do token. Opcional: filtrar por `cityId` (município) e `type`.',
+      'Escopo pelo tenant do token. Opcional: filtrar por `cityId` (município) e `type`. Apenas ADMIN e SUPER_ADMIN (SECRETARIA não tem acesso).',
   })
   @ApiBearerAuth()
   @ApiOkResponse({ type: PaginatedFeedbacksResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token do painel inválido' })
-  @UseGuards(JwtAuthGuard)
+  @ApiForbiddenResponse({ description: 'SECRETARIA sem permissão' })
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Get()
   listStaff(
     @CurrentUser() user: JwtPayload,

@@ -35,6 +35,7 @@ export class AuthService {
     companyCityId: string | null;
     email: string;
     role: JwtPayload['role'];
+    departmentId?: string | null;
   }): JwtPayload {
     return {
       sub: user.id,
@@ -42,6 +43,7 @@ export class AuthService {
       companyCityId: user.companyCityId,
       email: user.email,
       role: user.role,
+      departmentId: user.departmentId ?? null,
     };
   }
 
@@ -101,6 +103,7 @@ export class AuthService {
       companyCityId,
       email: user.email,
       role: user.role,
+      departmentId: user.departmentId,
     });
 
     const [token, refreshToken] = await Promise.all([
@@ -143,6 +146,7 @@ export class AuthService {
       companyCityId: authUser.companyCityId ?? null,
       email: authUser.email,
       role: authUser.role,
+      departmentId: authUser.departmentId,
     });
 
     const [token, newRefresh] = await Promise.all([

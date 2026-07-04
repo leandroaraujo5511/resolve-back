@@ -28,3 +28,45 @@ export function resolvePanelCompanyId(
   }
   return id;
 }
+
+/**
+ * Escopo por departamento no painel.
+ * - SECRETARIA com `departmentId`: só acessa dados daquele departamento.
+ * - SECRETARIA sem departamento (ou demais papéis): sem restrição (`null`).
+ */
+export function resolvePanelDepartmentScope(
+  user: JwtPayload,
+): string | null {
+  if (user.role !== UserRole.SECRETARIA) {
+    return null;
+  }
+  const id = user.departmentId?.trim();
+  return id || null;
+}
+
+/**
+ * Garante que o recurso do departamento está dentro do escopo do usuário.
+ * Sem escopo (null), qualquer departamento do tenant é permitido.
+ */
+export function assertPanelDepartmentAccess(
+  user: JwtPayload,
+  resourceDepartmentId: string,
+): void {
+  const scope = resolvePanelDepartmentScope(user);
+  if (scope && scope !== resourceDepartmentId) {
+    throw new ForbiddenException(
+      'Sem permissão para dados de outro departamento',
+    );
+  }
+}
+
+/**
+ * SECRETARIA vinculada a um departamento não pode alterar cadastros de departamentos.
+ */
+export function assertCanManageDepartments(user: JwtPayload): void {
+  if (resolvePanelDepartmentScope(user)) {
+    throw new ForbiddenException(
+      'Usuário restrito ao próprio departamento não pode gerenciar departamentos',
+    );
+  }
+}

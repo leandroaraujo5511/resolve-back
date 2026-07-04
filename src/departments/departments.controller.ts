@@ -26,7 +26,11 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/auth-user.interface';
-import { resolvePanelCompanyId } from '../common/tenant-scope';
+import {
+  assertCanManageDepartments,
+  resolvePanelCompanyId,
+  resolvePanelDepartmentScope,
+} from '../common/tenant-scope';
 import { DepartmentsService } from './departments.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { DepartmentResponseDto } from './dto/department.response';
@@ -53,12 +57,15 @@ export class DepartmentsController {
     @Query('companyId') companyIdQuery: string | undefined,
     @Body() dto: CreateDepartmentDto,
   ) {
+    assertCanManageDepartments(user);
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
     return this.departmentsService.createByCompany(companyId, dto);
   }
 
   @ApiOperation({
     summary: 'Lista departamentos da empresa do usuário autenticado',
+    description:
+      'SECRETARIA vinculada a um departamento só recebe o próprio departamento.',
   })
   @ApiBearerAuth()
   @ApiOkResponse({ type: [DepartmentResponseDto] })
@@ -70,7 +77,12 @@ export class DepartmentsController {
     @Query() query: ListDepartmentsQueryDto,
   ) {
     const companyId = resolvePanelCompanyId(user, query.companyId);
-    return this.departmentsService.findByCompany(companyId, query.status);
+    const departmentScope = resolvePanelDepartmentScope(user);
+    return this.departmentsService.findByCompany(
+      companyId,
+      query.status,
+      departmentScope,
+    );
   }
 
   @ApiOperation({
@@ -90,6 +102,7 @@ export class DepartmentsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDepartmentDto,
   ) {
+    assertCanManageDepartments(user);
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
     return this.departmentsService.updateByCompany(companyId, id, dto);
   }
@@ -112,6 +125,7 @@ export class DepartmentsController {
     @Query('companyId') companyIdQuery: string | undefined,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
+    assertCanManageDepartments(user);
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
     await this.departmentsService.deleteByCompany(companyId, id);
   }

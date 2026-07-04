@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { Citizen } from '../database/entities/citizen.entity';
 import { Department } from '../database/entities/department.entity';
 import { Feedback } from '../database/entities/feedback.entity';
@@ -13,6 +14,6 @@ import { ReportsService } from './reports.service';
     TypeOrmModule.forFeature([Ticket, Feedback, User, Citizen, Department]),
   ],
   controllers: [ReportsController],
-  providers: [ReportsService],
+  providers: [ReportsService, RolesGuard],
 })
 export class ReportsModule {}

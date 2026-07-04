@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -58,6 +59,7 @@ export class TicketsService {
   async findAllPaginated(
     companyId: string,
     query: ListTicketsQueryDto,
+    departmentScope?: string | null,
   ): Promise<PaginatedTicketsResponseDto> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -69,9 +71,16 @@ export class TicketsService {
     if (query.status) {
       qb.andWhere('t.status = :status', { status: query.status });
     }
-    if (query.departmentId) {
+
+    const effectiveDepartmentId = departmentScope ?? query.departmentId;
+    if (departmentScope && query.departmentId && query.departmentId !== departmentScope) {
+      throw new ForbiddenException(
+        'Sem permissão para filtrar outro departamento',
+      );
+    }
+    if (effectiveDepartmentId) {
       qb.andWhere('t.departmentId = :departmentId', {
-        departmentId: query.departmentId,
+        departmentId: effectiveDepartmentId,
       });
     }
     if (query.priority) {
@@ -116,7 +125,11 @@ export class TicketsService {
     };
   }
 
-  async findOneByCompany(companyId: string, id: string): Promise<TicketResponseDto> {
+  async findOneByCompany(
+    companyId: string,
+    id: string,
+    departmentScope?: string | null,
+  ): Promise<TicketResponseDto> {
     const ticket = await this.ticketRepository.findOne({
       where: { id, companyId },
       relations: ['history'],
@@ -124,6 +137,12 @@ export class TicketsService {
 
     if (!ticket) {
       throw new NotFoundException('Chamado não encontrado');
+    }
+
+    if (departmentScope && ticket.departmentId !== departmentScope) {
+      throw new ForbiddenException(
+        'Sem permissão para dados de outro departamento',
+      );
     }
 
     return this.toResponseDto(ticket);
@@ -381,6 +400,7 @@ export class TicketsService {
     ticketId: string,
     dto: PatchTicketDto,
     userId: string,
+    departmentScope?: string | null,
   ): Promise<TicketResponseDto> {
     if (
       dto.status === undefined &&
@@ -398,6 +418,18 @@ export class TicketsService {
 
     if (!ticket) {
       throw new NotFoundException('Chamado não encontrado');
+    }
+
+    if (departmentScope && ticket.departmentId !== departmentScope) {
+      throw new ForbiddenException(
+        'Sem permissão para dados de outro departamento',
+      );
+    }
+
+    if (departmentScope && dto.departmentId !== undefined && dto.departmentId !== departmentScope) {
+      throw new ForbiddenException(
+        'Não é permitido transferir o chamado para outro departamento',
+      );
     }
 
     if (dto.departmentId !== undefined) {
@@ -437,7 +469,7 @@ export class TicketsService {
     }
 
     if (!changed) {
-      return this.findOneByCompany(companyId, ticketId);
+      return this.findOneByCompany(companyId, ticketId, departmentScope);
     }
 
     await this.ticketRepository.save(ticket);
@@ -479,7 +511,7 @@ export class TicketsService {
       }
     }
 
-    return this.findOneByCompany(companyId, ticketId);
+    return this.findOneByCompany(companyId, ticketId, departmentScope);
   }
 
   async addHistory(
@@ -487,6 +519,7 @@ export class TicketsService {
     ticketId: string,
     dto: AddTicketHistoryDto,
     userId: string,
+    departmentScope?: string | null,
   ): Promise<TicketResponseDto> {
     const ticket = await this.ticketRepository.findOne({
       where: { id: ticketId, companyId },
@@ -494,6 +527,12 @@ export class TicketsService {
 
     if (!ticket) {
       throw new NotFoundException('Chamado não encontrado');
+    }
+
+    if (departmentScope && ticket.departmentId !== departmentScope) {
+      throw new ForbiddenException(
+        'Sem permissão para dados de outro departamento',
+      );
     }
 
     const newStatus = dto.status ?? ticket.status;
@@ -547,7 +586,7 @@ export class TicketsService {
       );
     }
 
-    return this.findOneByCompany(companyId, ticketId);
+    return this.findOneByCompany(companyId, ticketId, departmentScope);
   }
 
   private async ensureDepartmentInCompany(

@@ -22,7 +22,10 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/auth-user.interface';
-import { resolvePanelCompanyId } from '../common/tenant-scope';
+import {
+  resolvePanelCompanyId,
+  resolvePanelDepartmentScope,
+} from '../common/tenant-scope';
 import { AddTicketHistoryDto } from './dto/add-ticket-history.dto';
 import { ListTicketsQueryDto } from './dto/list-tickets.query.dto';
 import { PatchTicketDto } from './dto/patch-ticket.dto';
@@ -37,7 +40,7 @@ export class TicketsController {
   @ApiOperation({
     summary: 'Lista chamados da empresa do token (paginado)',
     description:
-      'Filtros: status, departmentId, priority, search. Resposta: data, total, page, limit.',
+      'Filtros: status, departmentId, priority, search. SECRETARIA vinculada a um departamento só vê chamados desse departamento.',
   })
   @ApiBearerAuth()
   @ApiOkResponse({ type: PaginatedTicketsResponseDto })
@@ -49,13 +52,18 @@ export class TicketsController {
     @Query() query: ListTicketsQueryDto,
   ) {
     const companyId = resolvePanelCompanyId(user, query.companyId);
-    return this.ticketsService.findAllPaginated(companyId, query);
+    const departmentScope = resolvePanelDepartmentScope(user);
+    return this.ticketsService.findAllPaginated(
+      companyId,
+      query,
+      departmentScope,
+    );
   }
 
   @ApiOperation({
     summary: 'Adiciona comentário ao histórico do chamado',
     description:
-      'Opcionalmente altera o status. `userId` do histórico vem do JWT.',
+      'Opcionalmente altera o status. `userId` do histórico vem do JWT. Respeita escopo de departamento da SECRETARIA.',
   })
   @ApiBearerAuth()
   @ApiBody({ type: AddTicketHistoryDto })
@@ -72,13 +80,20 @@ export class TicketsController {
     @Body() dto: AddTicketHistoryDto,
   ) {
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
-    return this.ticketsService.addHistory(companyId, id, dto, user.sub);
+    const departmentScope = resolvePanelDepartmentScope(user);
+    return this.ticketsService.addHistory(
+      companyId,
+      id,
+      dto,
+      user.sub,
+      departmentScope,
+    );
   }
 
   @ApiOperation({
     summary: 'Atualiza status e/ou departamento do chamado',
     description:
-      'Gera uma entrada no histórico quando houver alteração efetiva. Departamento deve ser do mesmo tenant.',
+      'Gera uma entrada no histórico quando houver alteração efetiva. Departamento deve ser do mesmo tenant. SECRETARIA vinculada não pode transferir para outro departamento.',
   })
   @ApiBearerAuth()
   @ApiBody({ type: PatchTicketDto })
@@ -97,12 +112,20 @@ export class TicketsController {
     @Body() dto: PatchTicketDto,
   ) {
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
-    return this.ticketsService.patchTicket(companyId, id, dto, user.sub);
+    const departmentScope = resolvePanelDepartmentScope(user);
+    return this.ticketsService.patchTicket(
+      companyId,
+      id,
+      dto,
+      user.sub,
+      departmentScope,
+    );
   }
 
   @ApiOperation({
     summary: 'Detalhe do chamado com histórico',
-    description: 'Somente se o ticket pertencer ao companyId do JWT.',
+    description:
+      'Somente se o ticket pertencer ao companyId do JWT e ao departamento da SECRETARIA (quando vinculada).',
   })
   @ApiBearerAuth()
   @ApiOkResponse({ type: TicketResponseDto })
@@ -116,6 +139,11 @@ export class TicketsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
-    return this.ticketsService.findOneByCompany(companyId, id);
+    const departmentScope = resolvePanelDepartmentScope(user);
+    return this.ticketsService.findOneByCompany(
+      companyId,
+      id,
+      departmentScope,
+    );
   }
 }

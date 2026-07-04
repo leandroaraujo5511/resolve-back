@@ -81,9 +81,12 @@ export class ReportsService {
     companyId: string,
     cityId: string | undefined,
     range: DateRange,
+    departmentId?: string | null,
   ): void {
     qb.where('t.companyId = :companyId', { companyId });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    if (departmentId)
+      qb.andWhere('t.departmentId = :departmentId', { departmentId });
     if (range.from)
       qb.andWhere('t.createdAt >= :dFrom', { dFrom: range.from });
     if (range.to) qb.andWhere('t.createdAt <= :dTo', { dTo: range.to });
@@ -95,12 +98,24 @@ export class ReportsService {
     cityId: string | undefined,
     range: DateRange,
     dateColumn: 'createdAt' | 'updatedAt',
+    departmentId?: string | null,
   ): void {
     qb.where('t.companyId = :companyId', { companyId });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    if (departmentId)
+      qb.andWhere('t.departmentId = :departmentId', { departmentId });
     if (range.from)
       qb.andWhere(`t.${dateColumn} >= :dFrom`, { dFrom: range.from });
     if (range.to) qb.andWhere(`t.${dateColumn} <= :dTo`, { dTo: range.to });
+  }
+
+  private applyTicketDepartment(
+    qb: SelectQueryBuilder<Ticket>,
+    departmentId?: string | null,
+  ): void {
+    if (departmentId) {
+      qb.andWhere('t.departmentId = :departmentId', { departmentId });
+    }
   }
 
   private applyFeedbackScope(
@@ -116,9 +131,14 @@ export class ReportsService {
     if (range.to) qb.andWhere('f.createdAt <= :dTo', { dTo: range.to });
   }
 
-  async getDashboard(companyId: string, query: ReportsQueryDto) {
+  async getDashboard(
+    companyId: string,
+    query: ReportsQueryDto,
+    departmentScope?: string | null,
+  ) {
     const range = this.parseRange(query);
     const cityId = query.cityId?.trim() || undefined;
+    const departmentId = departmentScope ?? null;
     const series = this.seriesWindow(range);
 
     const ticketsTotal = await this.ticketCount(
@@ -126,22 +146,35 @@ export class ReportsService {
       cityId,
       range,
       'createdAt',
+      departmentId,
     );
 
     const openQb = this.ticketRepo.createQueryBuilder('t');
-    this.applyTicketCreatedFilter(openQb, companyId, cityId, range);
+    this.applyTicketCreatedFilter(openQb, companyId, cityId, range, departmentId);
     openQb.andWhere('t.status NOT IN (:...closed)', {
       closed: [TicketStatus.RESOLVIDO, TicketStatus.CANCELADO],
     });
     const ticketsOpen = await openQb.getCount();
 
     const resolvedQb = this.ticketRepo.createQueryBuilder('t');
-    this.applyTicketCreatedFilter(resolvedQb, companyId, cityId, range);
+    this.applyTicketCreatedFilter(
+      resolvedQb,
+      companyId,
+      cityId,
+      range,
+      departmentId,
+    );
     resolvedQb.andWhere('t.status = :st', { st: TicketStatus.RESOLVIDO });
     const ticketsResolved = await resolvedQb.getCount();
 
     const cancelledQb = this.ticketRepo.createQueryBuilder('t');
-    this.applyTicketCreatedFilter(cancelledQb, companyId, cityId, range);
+    this.applyTicketCreatedFilter(
+      cancelledQb,
+      companyId,
+      cityId,
+      range,
+      departmentId,
+    );
     cancelledQb.andWhere('t.status = :st', { st: TicketStatus.CANCELADO });
     const ticketsCancelled = await cancelledQb.getCount();
 
@@ -151,6 +184,7 @@ export class ReportsService {
       .andWhere('t.status = :st', { st: TicketStatus.RESOLVIDO });
     if (cityId)
       resolvedInPeriodQb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(resolvedInPeriodQb, departmentId);
     if (range.from)
       resolvedInPeriodQb.andWhere('t.updatedAt >= :dFrom', {
         dFrom: range.from,
@@ -175,9 +209,13 @@ export class ReportsService {
       where: { companyId },
     });
 
-    const departmentsActive = await this.departmentRepo.count({
-      where: { companyId, status: 'ativo' },
-    });
+    const departmentsActive = departmentId
+      ? await this.departmentRepo.count({
+          where: { id: departmentId, companyId, status: 'ativo' },
+        })
+      : await this.departmentRepo.count({
+          where: { companyId, status: 'ativo' },
+        });
 
     const avgQb = this.ticketRepo
       .createQueryBuilder('t')
@@ -188,6 +226,7 @@ export class ReportsService {
       .where('t.companyId = :companyId', { companyId })
       .andWhere('t.status = :st', { st: TicketStatus.RESOLVIDO });
     if (cityId) avgQb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(avgQb, departmentId);
     if (range.from)
       avgQb.andWhere('t.updatedAt >= :dFrom', { dFrom: range.from });
     if (range.to) avgQb.andWhere('t.updatedAt <= :dTo', { dTo: range.to });
@@ -210,29 +249,31 @@ export class ReportsService {
       usersByRole,
       usersByDepartment,
     ] = await Promise.all([
-      this.ticketsGroupByStatus(companyId, cityId, range),
-      this.ticketsGroupByPriority(companyId, cityId, range),
-      this.ticketsGroupByDepartment(companyId, cityId, range),
-      this.ticketsGroupByCity(companyId, cityId, range),
-      this.ticketsGroupByNeighborhood(companyId, cityId, range),
+      this.ticketsGroupByStatus(companyId, cityId, range, departmentId),
+      this.ticketsGroupByPriority(companyId, cityId, range, departmentId),
+      this.ticketsGroupByDepartment(companyId, cityId, range, departmentId),
+      this.ticketsGroupByCity(companyId, cityId, range, departmentId),
+      this.ticketsGroupByNeighborhood(companyId, cityId, range, departmentId),
       this.ticketsDailySeries(
         companyId,
         cityId,
         series,
         'createdAt',
+        departmentId,
       ),
-      this.ticketsResolvedDailySeries(companyId, cityId, series),
+      this.ticketsResolvedDailySeries(companyId, cityId, series, departmentId),
       this.feedbacksGroupByType(companyId, cityId, range),
       this.feedbacksDailySeries(companyId, cityId, series),
       this.citizensGroupByCity(companyId, cityId, range),
       this.usersGroupByRole(companyId),
-      this.usersGroupByDepartment(companyId),
+      this.usersGroupByDepartment(companyId, departmentId),
     ]);
 
     return {
       filters: {
         companyId,
         cityId: cityId ?? null,
+        departmentId: departmentId ?? null,
         dateFrom: query.dateFrom?.trim() || null,
         dateTo: query.dateTo?.trim() || null,
       },
@@ -275,9 +316,10 @@ export class ReportsService {
     cityId: string | undefined,
     range: DateRange,
     col: 'createdAt' | 'updatedAt',
+    departmentId?: string | null,
   ): Promise<number> {
     const qb = this.ticketRepo.createQueryBuilder('t');
-    this.applyTicketScope(qb, companyId, cityId, range, col);
+    this.applyTicketScope(qb, companyId, cityId, range, col, departmentId);
     return qb.getCount();
   }
 
@@ -285,6 +327,7 @@ export class ReportsService {
     companyId: string,
     cityId: string | undefined,
     range: DateRange,
+    departmentId?: string | null,
   ) {
     const qb = this.ticketRepo
       .createQueryBuilder('t')
@@ -292,6 +335,7 @@ export class ReportsService {
       .addSelect('COUNT(*)', 'count')
       .where('t.companyId = :companyId', { companyId });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     if (range.from)
       qb.andWhere('t.createdAt >= :dFrom', { dFrom: range.from });
     if (range.to) qb.andWhere('t.createdAt <= :dTo', { dTo: range.to });
@@ -307,6 +351,7 @@ export class ReportsService {
     companyId: string,
     cityId: string | undefined,
     range: DateRange,
+    departmentId?: string | null,
   ) {
     const qb = this.ticketRepo
       .createQueryBuilder('t')
@@ -314,6 +359,7 @@ export class ReportsService {
       .addSelect('COUNT(*)', 'count')
       .where('t.companyId = :companyId', { companyId });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     if (range.from)
       qb.andWhere('t.createdAt >= :dFrom', { dFrom: range.from });
     if (range.to) qb.andWhere('t.createdAt <= :dTo', { dTo: range.to });
@@ -329,6 +375,7 @@ export class ReportsService {
     companyId: string,
     cityId: string | undefined,
     range: DateRange,
+    departmentId?: string | null,
   ) {
     const qb = this.ticketRepo
       .createQueryBuilder('t')
@@ -338,6 +385,7 @@ export class ReportsService {
       .addSelect('COUNT(*)', 'count')
       .where('t.companyId = :companyId', { companyId });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     if (range.from)
       qb.andWhere('t.createdAt >= :dFrom', { dFrom: range.from });
     if (range.to) qb.andWhere('t.createdAt <= :dTo', { dTo: range.to });
@@ -360,6 +408,7 @@ export class ReportsService {
     companyId: string,
     cityId: string | undefined,
     range: DateRange,
+    departmentId?: string | null,
   ) {
     const qb = this.ticketRepo
       .createQueryBuilder('t')
@@ -369,6 +418,7 @@ export class ReportsService {
       .addSelect('COUNT(*)', 'count')
       .where('t.companyId = :companyId', { companyId });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     if (range.from)
       qb.andWhere('t.createdAt >= :dFrom', { dFrom: range.from });
     if (range.to) qb.andWhere('t.createdAt <= :dTo', { dTo: range.to });
@@ -389,6 +439,7 @@ export class ReportsService {
     companyId: string,
     cityId: string | undefined,
     range: DateRange,
+    departmentId?: string | null,
   ) {
     const qb = this.ticketRepo
       .createQueryBuilder('t')
@@ -398,6 +449,7 @@ export class ReportsService {
       .addSelect('COUNT(*)', 'count')
       .where('t.companyId = :companyId', { companyId });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     if (range.from)
       qb.andWhere('t.createdAt >= :dFrom', { dFrom: range.from });
     if (range.to) qb.andWhere('t.createdAt <= :dTo', { dTo: range.to });
@@ -421,6 +473,7 @@ export class ReportsService {
     cityId: string | undefined,
     window: { from: Date; to: Date },
     column: 'createdAt' | 'updatedAt',
+    departmentId?: string | null,
   ) {
     const qb = this.ticketRepo
       .createQueryBuilder('t')
@@ -430,6 +483,7 @@ export class ReportsService {
       .andWhere(`t.${column} >= :wFrom`, { wFrom: window.from })
       .andWhere(`t.${column} <= :wTo`, { wTo: window.to });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     qb
       .groupBy(`to_char(t."${column}", 'YYYY-MM-DD')`)
       .orderBy('date', 'ASC');
@@ -441,6 +495,7 @@ export class ReportsService {
     companyId: string,
     cityId: string | undefined,
     window: { from: Date; to: Date },
+    departmentId?: string | null,
   ) {
     const qb = this.ticketRepo
       .createQueryBuilder('t')
@@ -451,6 +506,7 @@ export class ReportsService {
       .andWhere('t.updatedAt >= :wFrom', { wFrom: window.from })
       .andWhere('t.updatedAt <= :wTo', { wTo: window.to });
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     qb
       .groupBy(`to_char(t."updatedAt", 'YYYY-MM-DD')`)
       .orderBy('date', 'ASC');
@@ -543,14 +599,21 @@ export class ReportsService {
     }));
   }
 
-  private async usersGroupByDepartment(companyId: string) {
-    const rows = await this.userRepo
+  private async usersGroupByDepartment(
+    companyId: string,
+    departmentId?: string | null,
+  ) {
+    const qb = this.userRepo
       .createQueryBuilder('u')
       .leftJoin('u.department', 'd')
       .select('u.departmentId', 'departmentId')
       .addSelect('d.name', 'departmentName')
       .addSelect('COUNT(*)', 'count')
-      .where('u.companyId = :companyId', { companyId })
+      .where('u.companyId = :companyId', { companyId });
+    if (departmentId) {
+      qb.andWhere('u.departmentId = :departmentId', { departmentId });
+    }
+    const rows = await qb
       .groupBy('u.departmentId')
       .addGroupBy('d.name')
       .orderBy('count', 'DESC')
@@ -566,9 +629,14 @@ export class ReportsService {
     }));
   }
 
-  async exportTicketsFlat(companyId: string, query: ReportsQueryDto) {
+  async exportTicketsFlat(
+    companyId: string,
+    query: ReportsQueryDto,
+    departmentScope?: string | null,
+  ) {
     const range = this.parseRange(query);
     const cityId = query.cityId?.trim() || undefined;
+    const departmentId = departmentScope ?? null;
     const qb = this.ticketRepo
       .createQueryBuilder('t')
       .leftJoin('t.department', 'd')
@@ -591,6 +659,7 @@ export class ReportsService {
       .orderBy('t.createdAt', 'DESC')
       .take(EXPORT_ROW_CAP);
     if (cityId) qb.andWhere('t.cityId = :cityId', { cityId });
+    this.applyTicketDepartment(qb, departmentId);
     if (range.from)
       qb.andWhere('t.createdAt >= :dFrom', { dFrom: range.from });
     if (range.to) qb.andWhere('t.createdAt <= :dTo', { dTo: range.to });

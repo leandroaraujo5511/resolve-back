@@ -21,7 +21,16 @@ export class DepartmentsService {
   async findByCompany(
     companyId: string,
     status?: 'ativo' | 'inativo',
+    departmentScope?: string | null,
   ): Promise<Department[]> {
+    if (departmentScope) {
+      const department = await this.departmentRepository.findOne({
+        where: status
+          ? { id: departmentScope, companyId, status }
+          : { id: departmentScope, companyId },
+      });
+      return department ? [department] : [];
+    }
     return this.departmentRepository.find({
       where: status ? { companyId, status } : { companyId },
       order: { name: 'ASC' },
