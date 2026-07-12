@@ -17,6 +17,15 @@ export class CreateCitizenTicketDto {
   @IsUUID()
   departmentId: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Subdepartamento opcional (deve pertencer ao departmentId e estar ativo)',
+  })
+  @IsOptional()
+  @IsUUID()
+  subDepartmentId?: string;
+
   @ApiProperty({ example: 'Buraco na via' })
   @IsString()
   @MinLength(3)

@@ -11,6 +11,12 @@ import { Ticket } from './ticket.entity';
 import { User } from './user.entity';
 import { TicketStatus } from './ticket.enums';
 
+export type TicketHistoryActorType =
+  | 'USER'
+  | 'CITIZEN'
+  | 'SYSTEM'
+  | 'INTEGRATION';
+
 @Entity('ticket_history')
 export class TicketHistory {
   @PrimaryGeneratedColumn('uuid')
@@ -50,4 +56,12 @@ export class TicketHistory {
 
   @Column({ type: 'boolean', default: false })
   isInternal: boolean;
+
+  /** USER | CITIZEN | SYSTEM | INTEGRATION — snapshot no momento da ação (RN-091). */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  actorType: TicketHistoryActorType | null;
+
+  /** Nome exibido no histórico (snapshot; não muda se o usuário for renomeado). */
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  actorDisplayName: string | null;
 }

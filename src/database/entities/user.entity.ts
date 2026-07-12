@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Company } from './company.entity';
 import { Department } from './department.entity';
+import { SubDepartment } from './sub-department.entity';
 
 export enum UserRole {
   /** Gestão global da plataforma (vários tenants). */
@@ -55,11 +56,39 @@ export class User {
   @JoinColumn({ name: 'departmentId' })
   department?: Department;
 
+  /**
+   * Escopo opcional dentro do departamento (SECRETARIA).
+   * Quando preenchido, o usuário só vê tickets desse subdepartamento.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  subDepartmentId?: string | null;
+
+  @ManyToOne(() => SubDepartment, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'subDepartmentId' })
+  subDepartment?: SubDepartment | null;
+
   @Column({ type: 'varchar', length: 20, default: 'ativo' })
   status: 'ativo' | 'inativo';
 
   @Column({ length: 255 })
   passwordHash: string;
+
+  /** Exige troca de senha antes de acessar o restante do painel. */
+  @Column({ type: 'boolean', default: false })
+  mustChangePassword: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordChangedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  welcomeEmailSentAt: Date | null;
+
+  /**
+   * Incrementado para invalidar refresh tokens emitidos anteriormente (R-11).
+   * Incluído no payload do refresh JWT como `tv`.
+   */
+  @Column({ type: 'int', default: 0 })
+  tokenVersion: number;
 
   @CreateDateColumn()
   createdAt: Date;

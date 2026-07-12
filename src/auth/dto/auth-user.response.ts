@@ -39,6 +39,29 @@ export class AuthUserResponseDto {
     example: null,
   })
   departmentId?: string;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Subdepartamento opcional; restringe a visão aos tickets desse subdepartamento',
+  })
+  subDepartmentId?: string | null;
+
+  @ApiProperty({
+    description: 'Se true, o usuário deve alterar a senha antes de usar o painel',
+    example: false,
+  })
+  mustChangePassword: boolean;
+}
+
+export class CreateUserResponseDto extends AuthUserResponseDto {
+  @ApiProperty({
+    enum: ['sent', 'failed', 'skipped'],
+    description:
+      'sent = e-mail enfileirado no gateway; failed = falha ao chamar gateway; skipped = não solicitado',
+  })
+  emailDeliveryStatus: 'sent' | 'failed' | 'skipped';
 }
 
 export class LoginResponseDto {

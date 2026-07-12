@@ -23,4 +23,14 @@ export class PatchTicketDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Subdepartamento (null limpa). Se departmentId mudar sem subDepartmentId, limpa automaticamente.',
+  })
+  @IsOptional()
+  @IsUUID()
+  subDepartmentId?: string | null;
 }

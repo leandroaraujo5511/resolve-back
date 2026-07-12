@@ -12,6 +12,9 @@ export interface AuthUser {
   role: UserRole;
   status: 'ativo' | 'inativo';
   departmentId?: string;
+  /** Escopo opcional dentro do departamento (SECRETARIA). */
+  subDepartmentId?: string | null;
+  mustChangePassword: boolean;
 }
 
 export interface JwtPayload {
@@ -22,4 +25,13 @@ export interface JwtPayload {
   role: UserRole;
   /** Presente quando o usuário do painel está vinculado a um departamento. */
   departmentId?: string | null;
+  /** Presente quando o usuário está vinculado a um subdepartamento. */
+  subDepartmentId?: string | null;
+  mustChangePassword?: boolean;
+}
+
+export type EmailDeliveryStatus = 'sent' | 'failed' | 'skipped';
+
+export interface CreateUserResult extends AuthUser {
+  emailDeliveryStatus: EmailDeliveryStatus;
 }

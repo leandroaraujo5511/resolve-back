@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsEmail,
   IsIn,
   IsOptional,
@@ -7,7 +8,9 @@ import {
   IsUUID,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { UserRole } from '../../database/entities/user.entity';
 
 const PANEL_ASSIGNABLE_ROLES = [UserRole.ADMIN, UserRole.SECRETARIA] as const;
@@ -30,11 +33,39 @@ export class CreateUserDto {
   @MaxLength(20)
   phone: string;
 
-  @ApiProperty({ minLength: 6, example: 'Senha@123' })
+  @ApiPropertyOptional({
+    description:
+      'Obrigatória se sendWelcomeEmail for false/ausente. Ignorada (gerada) quando sendWelcomeEmail=true.',
+    minLength: 6,
+    example: 'Senha@123',
+  })
+  @ValidateIf((o: CreateUserDto) => o.sendWelcomeEmail !== true)
   @IsString()
   @MinLength(6)
   @MaxLength(120)
-  password: string;
+  password?: string;
+
+  @ApiPropertyOptional({
+    description: 'Enviar e-mail de boas-vindas com senha provisória (default UI: true)',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  sendWelcomeEmail?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Exigir alteração de senha no primeiro login. Default: true se sendWelcomeEmail, senão false.',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined || value === null
+      ? undefined
+      : value === true || value === 'true',
+  )
+  @IsBoolean()
+  requirePasswordChange?: boolean;
 
   @ApiPropertyOptional({
     enum: [UserRole.ADMIN, UserRole.SECRETARIA],
@@ -55,10 +86,19 @@ export class CreateUserDto {
   @IsUUID()
   departmentId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Opcional. Deve pertencer ao departmentId. Restringe a visão aos tickets do subdepartamento.',
+  })
+  @IsOptional()
+  @IsUUID()
+  subDepartmentId?: string;
+
   @ApiPropertyOptional({ enum: ['ativo', 'inativo'], default: 'ativo' })
   @IsOptional()
   @IsString()
   @IsIn(['ativo', 'inativo'])
   status?: 'ativo' | 'inativo';
 }
-

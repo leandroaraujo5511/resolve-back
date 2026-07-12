@@ -22,6 +22,17 @@ export class TicketHistoryResponseDto {
 
   @ApiProperty({ required: false })
   isInternal?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['USER', 'CITIZEN', 'SYSTEM', 'INTEGRATION'],
+    description: 'Tipo do autor no momento da ação',
+  })
+  actorType?: 'USER' | 'CITIZEN' | 'SYSTEM' | 'INTEGRATION';
+
+  @ApiPropertyOptional({
+    description: 'Nome do autor (snapshot); fallback genérico se legado',
+  })
+  actorDisplayName?: string;
 }
 
 export class TicketResponseDto {
@@ -72,6 +83,9 @@ export class TicketResponseDto {
 
   @ApiProperty()
   departmentId: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  subDepartmentId?: string | null;
 
   @ApiProperty({ enum: TicketStatus })
   status: TicketStatus;

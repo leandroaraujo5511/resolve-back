@@ -7,11 +7,14 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { CitizenAuthController } from './citizen-auth.controller';
 import { CitizenAuthService } from './citizen-auth.service';
+import { PanelPasswordResetService } from './panel-password-reset.service';
 import { UsersModule } from '../users/users.module';
 import { CitizenOtp } from '../database/entities/citizen-otp.entity';
 import { Citizen } from '../database/entities/citizen.entity';
 import { City } from '../database/entities/city.entity';
 import { Company } from '../database/entities/company.entity';
+import { PasswordResetToken } from '../database/entities/password-reset-token.entity';
+import { PasswordResetRequestLog } from '../database/entities/password-reset-request-log.entity';
 import { CitizenJwtStrategy } from './strategies/citizen-jwt.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { CommunicationModule } from '../communication/communication.module';
@@ -21,7 +24,14 @@ import { CommunicationModule } from '../communication/communication.module';
     ConfigModule,
     CommunicationModule,
     UsersModule,
-    TypeOrmModule.forFeature([Citizen, City, CitizenOtp, Company]),
+    TypeOrmModule.forFeature([
+      Citizen,
+      City,
+      CitizenOtp,
+      Company,
+      PasswordResetToken,
+      PasswordResetRequestLog,
+    ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -35,6 +45,12 @@ import { CommunicationModule } from '../communication/communication.module';
   ],
   controllers: [AuthController, CitizenAuthController],
   exports: [AuthService, CitizenAuthService, JwtModule],
-  providers: [AuthService, CitizenAuthService, JwtStrategy, CitizenJwtStrategy],
+  providers: [
+    AuthService,
+    CitizenAuthService,
+    PanelPasswordResetService,
+    JwtStrategy,
+    CitizenJwtStrategy,
+  ],
 })
 export class AuthModule {}

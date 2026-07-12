@@ -142,6 +142,68 @@ export class CommunicationGatewayService {
     }
   }
 
+  /**
+   * Enfileira e-mail via gateway (`POST /messages/send-email`).
+   * Resposta 202 = aceito na fila (não garante entrega SMTP).
+   */
+  async sendEmail(input: {
+    to: string;
+    subject: string;
+    textBody: string;
+    htmlBody?: string;
+  }): Promise<{ messageId: string }> {
+    if (!this.isEnabled()) {
+      throw new ServiceUnavailableException(
+        'Gateway de comunicação não configurado',
+      );
+    }
+
+    const url = `${this.baseUrl()}/messages/send-email`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          to: input.to.trim(),
+          subject: input.subject,
+          text_body: input.textBody,
+          html_body: input.htmlBody ?? undefined,
+        }),
+      });
+
+      if (res.status === 429) {
+        throw new HttpException(
+          'Limite de envios atingido. Tente novamente em instantes.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        this.logger.warn(`Gateway send-email HTTP ${res.status}: ${text}`);
+        throw new BadGatewayException(
+          'Falha ao enfileirar e-mail. Tente novamente.',
+        );
+      }
+
+      const data = (await res.json()) as { id?: string };
+      if (!data.id) {
+        throw new BadGatewayException(
+          'Gateway não retornou id da mensagem de e-mail',
+        );
+      }
+      return { messageId: data.id };
+    } catch (e) {
+      if (e instanceof HttpException || e instanceof BadGatewayException) {
+        throw e;
+      }
+      this.logger.error(`Gateway send-email rede: ${String(e)}`);
+      throw new ServiceUnavailableException(
+        'Serviço de e-mail indisponível. Tente novamente mais tarde.',
+      );
+    }
+  }
+
   /** Valida código junto ao gateway (deve ser o mesmo `destination` usado no send-otp). */
   async verifyOtp(
     destination: string,

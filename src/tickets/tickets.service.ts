@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -18,12 +19,29 @@ import { CreateCitizenTicketDto } from './dto/create-citizen-ticket.dto';
 import { CitizenTicketRespondDto } from './dto/citizen-ticket-respond.dto';
 import { ListTicketsQueryDto } from './dto/list-tickets.query.dto';
 import { PatchTicketDto } from './dto/patch-ticket.dto';
+import { TransferTicketDto } from './dto/transfer-ticket.dto';
+import {
+  TransferOptionsResponseDto,
+  TransferTicketResponseDto,
+} from './dto/transfer-options.response.dto';
 import {
   PaginatedTicketsResponseDto,
   TicketHistoryResponseDto,
   TicketResponseDto,
 } from './dto/ticket.response.dto';
 import { ExpoPushService } from '../push/expo-push.service';
+import { SubDepartmentsService } from '../departments/sub-departments.service';
+import { TicketAttachmentsService } from './ticket-attachments.service';
+import { TicketHistoryActorService } from './ticket-history-actor.service';
+import type { PanelDataScope } from '../common/tenant-scope';
+import {
+  assertTicketInDataScope,
+  ticketMatchesPanelScope,
+} from '../common/tenant-scope';
+import {
+  fallbackActorDisplayName,
+  inferActorType,
+} from './ticket-history-actor';
 
 const TICKET_STATUS_PT: Record<TicketStatus, string> = {
   [TicketStatus.ABERTO]: 'Aberto',
@@ -48,6 +66,9 @@ export class TicketsService {
     @InjectRepository(Neighborhood)
     private readonly neighborhoodRepository: Repository<Neighborhood>,
     private readonly expoPushService: ExpoPushService,
+    private readonly subDepartmentsService: SubDepartmentsService,
+    private readonly ticketAttachmentsService: TicketAttachmentsService,
+    private readonly historyActors: TicketHistoryActorService,
   ) {}
 
   private truncate(text: string, max: number): string {
@@ -59,7 +80,7 @@ export class TicketsService {
   async findAllPaginated(
     companyId: string,
     query: ListTicketsQueryDto,
-    departmentScope?: string | null,
+    scope?: PanelDataScope | null,
   ): Promise<PaginatedTicketsResponseDto> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -72,6 +93,8 @@ export class TicketsService {
       qb.andWhere('t.status = :status', { status: query.status });
     }
 
+    const departmentScope = scope?.departmentId ?? null;
+    const subDepartmentScope = scope?.subDepartmentId ?? null;
     const effectiveDepartmentId = departmentScope ?? query.departmentId;
     if (departmentScope && query.departmentId && query.departmentId !== departmentScope) {
       throw new ForbiddenException(
@@ -81,6 +104,27 @@ export class TicketsService {
     if (effectiveDepartmentId) {
       qb.andWhere('t.departmentId = :departmentId', {
         departmentId: effectiveDepartmentId,
+      });
+    }
+    const effectiveSubDepartmentId = query.subDepartmentId;
+    if (
+      subDepartmentScope &&
+      query.subDepartmentId &&
+      query.subDepartmentId !== subDepartmentScope
+    ) {
+      throw new ForbiddenException(
+        'Sem permissão para filtrar outro subdepartamento',
+      );
+    }
+    if (subDepartmentScope) {
+      // Próprio subdept + tickets sem subdepartamento (visíveis a todo o dept)
+      qb.andWhere(
+        '(t.subDepartmentId IS NULL OR t.subDepartmentId = :subDepartmentScope)',
+        { subDepartmentScope },
+      );
+    } else if (effectiveSubDepartmentId) {
+      qb.andWhere('t.subDepartmentId = :subDepartmentId', {
+        subDepartmentId: effectiveSubDepartmentId,
       });
     }
     if (query.priority) {
@@ -128,7 +172,7 @@ export class TicketsService {
   async findOneByCompany(
     companyId: string,
     id: string,
-    departmentScope?: string | null,
+    scope?: PanelDataScope | null,
   ): Promise<TicketResponseDto> {
     const ticket = await this.ticketRepository.findOne({
       where: { id, companyId },
@@ -139,11 +183,7 @@ export class TicketsService {
       throw new NotFoundException('Chamado não encontrado');
     }
 
-    if (departmentScope && ticket.departmentId !== departmentScope) {
-      throw new ForbiddenException(
-        'Sem permissão para dados de outro departamento',
-      );
-    }
+    assertTicketInDataScope(ticket, scope);
 
     return this.toResponseDto(ticket);
   }
@@ -299,10 +339,21 @@ export class TicketsService {
 
     await this.ticketRepository.save(ticket);
 
+    if (newKeys.length > 0) {
+      await this.ticketAttachmentsService.syncCitizenKeys(
+        ticket,
+        newKeys,
+        citizen.sub,
+      );
+    }
+
+    const actor = await this.historyActors.forCitizen(citizen.sub);
     const hist = this.ticketHistoryRepository.create({
       ticketId: ticket.id,
-      userId: null,
-      citizenId: citizen.sub,
+      userId: actor.userId,
+      citizenId: actor.citizenId,
+      actorType: actor.actorType,
+      actorDisplayName: actor.actorDisplayName,
       status: TicketStatus.EM_ANDAMENTO,
       comment: segments.join('\n\n'),
       isInternal: false,
@@ -334,6 +385,13 @@ export class TicketsService {
       dto.departmentId,
     );
 
+    const subDepartmentId =
+      await this.subDepartmentsService.assertOptionalForDepartment(
+        citizen.companyId,
+        dto.departmentId,
+        dto.subDepartmentId,
+      );
+
     let neighborhood: Neighborhood | null = null;
     if (dto.neighborhoodId) {
       neighborhood = await this.neighborhoodRepository.findOne({
@@ -363,6 +421,7 @@ export class TicketsService {
       cityId: citizen.cityId,
       citizenId: citizen.sub,
       departmentId: dto.departmentId,
+      subDepartmentId,
       protocol,
       title: dto.title,
       shortDescription: dto.shortDescription,
@@ -382,10 +441,22 @@ export class TicketsService {
 
     const saved = await this.ticketRepository.save(ticket);
 
+    const createdKeys = dto.attachments ?? [];
+    if (createdKeys.length > 0) {
+      await this.ticketAttachmentsService.syncCitizenKeys(
+        saved,
+        createdKeys,
+        citizen.sub,
+      );
+    }
+
+    const actor = await this.historyActors.forCitizen(citizen.sub);
     const hist = this.ticketHistoryRepository.create({
       ticketId: saved.id,
-      userId: null,
-      citizenId: citizen.sub,
+      userId: actor.userId,
+      citizenId: actor.citizenId,
+      actorType: actor.actorType,
+      actorDisplayName: actor.actorDisplayName,
       status: TicketStatus.ABERTO,
       comment: 'Chamado aberto pelo cidadão via aplicativo.',
       isInternal: false,
@@ -400,15 +471,22 @@ export class TicketsService {
     ticketId: string,
     dto: PatchTicketDto,
     userId: string,
-    departmentScope?: string | null,
+    scope?: PanelDataScope | null,
   ): Promise<TicketResponseDto> {
     if (
       dto.status === undefined &&
       dto.departmentId === undefined &&
-      dto.priority === undefined
+      dto.priority === undefined &&
+      dto.subDepartmentId === undefined
     ) {
       throw new BadRequestException(
-        'Informe ao menos status, departmentId ou priority',
+        'Informe ao menos status, departmentId, subDepartmentId ou priority',
+      );
+    }
+
+    if (dto.departmentId !== undefined) {
+      throw new BadRequestException(
+        'Para alterar o departamento, use POST /tickets/:id/transfer com justificativa',
       );
     }
 
@@ -420,21 +498,7 @@ export class TicketsService {
       throw new NotFoundException('Chamado não encontrado');
     }
 
-    if (departmentScope && ticket.departmentId !== departmentScope) {
-      throw new ForbiddenException(
-        'Sem permissão para dados de outro departamento',
-      );
-    }
-
-    if (departmentScope && dto.departmentId !== undefined && dto.departmentId !== departmentScope) {
-      throw new ForbiddenException(
-        'Não é permitido transferir o chamado para outro departamento',
-      );
-    }
-
-    if (dto.departmentId !== undefined) {
-      await this.ensureDepartmentInCompany(companyId, dto.departmentId);
-    }
+    assertTicketInDataScope(ticket, scope);
 
     const parts: string[] = [];
     let changed = false;
@@ -449,14 +513,42 @@ export class TicketsService {
       statusChanged = true;
     }
 
-    if (
-      dto.departmentId !== undefined &&
-      dto.departmentId !== ticket.departmentId
-    ) {
-      parts.push('Departamento do chamado atualizado');
-      ticket.departmentId = dto.departmentId;
-      changed = true;
-      deptChanged = true;
+    if (dto.subDepartmentId !== undefined) {
+      const targetDeptId = ticket.departmentId;
+      const fromSubId = ticket.subDepartmentId;
+      const nextSubId =
+        dto.subDepartmentId === null
+          ? null
+          : await this.subDepartmentsService.assertOptionalForDepartment(
+              companyId,
+              targetDeptId,
+              dto.subDepartmentId,
+            );
+      if (nextSubId !== fromSubId) {
+        const fromName = await this.subDepartmentsService.findNameById(
+          companyId,
+          fromSubId,
+        );
+        const toName = await this.subDepartmentsService.findNameById(
+          companyId,
+          nextSubId,
+        );
+        if (!fromSubId && nextSubId) {
+          parts.push(
+            `Chamado atribuído ao subdepartamento ${toName ?? 'selecionado'}`,
+          );
+        } else if (fromSubId && !nextSubId) {
+          parts.push(
+            `Subdepartamento removido (antes: ${fromName ?? 'anterior'})`,
+          );
+        } else {
+          parts.push(
+            `Subdepartamento alterado de ${fromName ?? 'anterior'} para ${toName ?? 'selecionado'}`,
+          );
+        }
+        ticket.subDepartmentId = nextSubId;
+        changed = true;
+      }
     }
 
     if (dto.priority !== undefined && dto.priority !== ticket.priority) {
@@ -469,15 +561,18 @@ export class TicketsService {
     }
 
     if (!changed) {
-      return this.findOneByCompany(companyId, ticketId, departmentScope);
+      return this.findOneByCompany(companyId, ticketId, scope);
     }
 
     await this.ticketRepository.save(ticket);
 
+    const actor = await this.historyActors.forUser(userId);
     const hist = this.ticketHistoryRepository.create({
       ticketId: ticket.id,
-      userId,
-      citizenId: null,
+      userId: actor.userId,
+      citizenId: actor.citizenId,
+      actorType: actor.actorType,
+      actorDisplayName: actor.actorDisplayName,
       status: ticket.status,
       comment: parts.join('. '),
       isInternal: false,
@@ -511,7 +606,178 @@ export class TicketsService {
       }
     }
 
-    return this.findOneByCompany(companyId, ticketId, departmentScope);
+    // Após mover para outro subdept, o usuário escopado pode perder o acesso —
+    // devolve o snapshot sem revalidar o escopo (o front redireciona se necessário).
+    const withHistory = await this.ticketRepository.findOne({
+      where: { id: ticket.id, companyId },
+      relations: ['history'],
+    });
+    if (!withHistory) {
+      throw new NotFoundException('Chamado não encontrado');
+    }
+    return this.toResponseDto(withHistory);
+  }
+
+  async getTransferOptions(
+    companyId: string,
+    ticketId: string,
+    scope?: PanelDataScope | null,
+  ): Promise<TransferOptionsResponseDto> {
+    const ticket = await this.ticketRepository.findOne({
+      where: { id: ticketId, companyId },
+    });
+    if (!ticket) {
+      throw new NotFoundException('Chamado não encontrado');
+    }
+    assertTicketInDataScope(ticket, scope);
+
+    const departments = await this.departmentRepository.find({
+      where: { companyId, status: 'ativo' },
+      order: { name: 'ASC' },
+    });
+    const subs = await this.subDepartmentsService.listActiveByDepartmentIds(
+      companyId,
+      departments.map((d) => d.id),
+    );
+    const byDept = new Map<string, typeof subs>();
+    for (const s of subs) {
+      const list = byDept.get(s.departmentId) ?? [];
+      list.push(s);
+      byDept.set(s.departmentId, list);
+    }
+
+    return {
+      departments: departments
+        .filter((d) => d.id !== ticket.departmentId)
+        .map((d) => ({
+          id: d.id,
+          name: d.name,
+          subDepartments: (byDept.get(d.id) ?? []).map((s) => ({
+            id: s.id,
+            name: s.name,
+            sortOrder: s.sortOrder,
+          })),
+        })),
+    };
+  }
+
+  async transferTicket(
+    companyId: string,
+    ticketId: string,
+    dto: TransferTicketDto,
+    userId: string,
+    scope?: PanelDataScope | null,
+  ): Promise<TransferTicketResponseDto> {
+    const ticket = await this.ticketRepository.findOne({
+      where: { id: ticketId, companyId },
+    });
+
+    if (!ticket) {
+      throw new NotFoundException('Chamado não encontrado');
+    }
+
+    assertTicketInDataScope(ticket, scope);
+
+    if (dto.expectedUpdatedAt) {
+      const expectedMs = new Date(dto.expectedUpdatedAt).getTime();
+      const actualMs = ticket.updatedAt.getTime();
+      if (
+        Number.isNaN(expectedMs) ||
+        Math.abs(expectedMs - actualMs) > 1000
+      ) {
+        throw new ConflictException(
+          'O chamado foi alterado por outro usuário. Recarregue e tente novamente.',
+        );
+      }
+    }
+
+    const justification = dto.justification.trim();
+    if (justification.length < 10) {
+      throw new BadRequestException(
+        'A justificativa deve ter no mínimo 10 caracteres',
+      );
+    }
+
+    await this.ensureActiveDepartmentInCompany(companyId, dto.departmentId);
+
+    const fromDepartmentId = ticket.departmentId;
+    const fromSubDepartmentId = ticket.subDepartmentId;
+    const fromDept = await this.departmentRepository.findOne({
+      where: { id: fromDepartmentId, companyId },
+    });
+    const fromSubName = await this.subDepartmentsService.findNameById(
+      companyId,
+      fromSubDepartmentId,
+    );
+
+    const resolved = await this.subDepartmentsService.resolveForTransfer(
+      companyId,
+      dto.departmentId,
+      dto.subDepartmentId,
+    );
+
+    const toDept = await this.departmentRepository.findOne({
+      where: { id: dto.departmentId, companyId },
+    });
+
+    if (dto.departmentId === fromDepartmentId) {
+      throw new BadRequestException(
+        'Selecione um departamento diferente do atual',
+      );
+    }
+
+    ticket.departmentId = dto.departmentId;
+    ticket.subDepartmentId = resolved.subDepartmentId;
+    await this.ticketRepository.save(ticket);
+
+    const fromLabel = fromDept?.name ?? fromDepartmentId;
+    const toLabel = toDept?.name ?? dto.departmentId;
+    const fromSubPart = fromSubName ? ` / ${fromSubName}` : '';
+    const toSubPart = resolved.subDepartmentName
+      ? ` / ${resolved.subDepartmentName}`
+      : '';
+
+    const comment = [
+      `Transferido de "${fromLabel}"${fromSubPart} para "${toLabel}"${toSubPart}.`,
+      `Justificativa: ${justification}`,
+    ].join(' ');
+
+    const actor = await this.historyActors.forUser(userId);
+    const hist = this.ticketHistoryRepository.create({
+      ticketId: ticket.id,
+      userId: actor.userId,
+      citizenId: actor.citizenId,
+      actorType: actor.actorType,
+      actorDisplayName: actor.actorDisplayName,
+      status: ticket.status,
+      comment,
+      isInternal: dto.isInternal ?? false,
+    });
+    await this.ticketHistoryRepository.save(hist);
+
+    if (ticket.citizenId && !(dto.isInternal ?? false)) {
+      void this.expoPushService.notifyCitizen(
+        ticket.citizenId,
+        `Chamado ${ticket.protocol}`,
+        'Seu chamado foi encaminhado para outro departamento.',
+        { ticketId: ticket.id, ticketProtocol: ticket.protocol },
+      );
+    }
+
+    const accessLost = !ticketMatchesPanelScope(ticket, scope);
+
+    const withHistory = await this.ticketRepository.findOne({
+      where: { id: ticket.id, companyId },
+      relations: ['history'],
+    });
+    if (!withHistory) {
+      throw new NotFoundException('Chamado não encontrado');
+    }
+
+    return {
+      ...this.toResponseDto(withHistory),
+      accessLost,
+    };
   }
 
   async addHistory(
@@ -519,7 +785,7 @@ export class TicketsService {
     ticketId: string,
     dto: AddTicketHistoryDto,
     userId: string,
-    departmentScope?: string | null,
+    scope?: PanelDataScope | null,
   ): Promise<TicketResponseDto> {
     const ticket = await this.ticketRepository.findOne({
       where: { id: ticketId, companyId },
@@ -529,11 +795,7 @@ export class TicketsService {
       throw new NotFoundException('Chamado não encontrado');
     }
 
-    if (departmentScope && ticket.departmentId !== departmentScope) {
-      throw new ForbiddenException(
-        'Sem permissão para dados de outro departamento',
-      );
-    }
+    assertTicketInDataScope(ticket, scope);
 
     const newStatus = dto.status ?? ticket.status;
     const statusChanged =
@@ -543,10 +805,13 @@ export class TicketsService {
       ticket.status = dto.status!;
     }
 
+    const actor = await this.historyActors.forUser(userId);
     const hist = this.ticketHistoryRepository.create({
       ticketId: ticket.id,
-      userId,
-      citizenId: null,
+      userId: actor.userId,
+      citizenId: actor.citizenId,
+      actorType: actor.actorType,
+      actorDisplayName: actor.actorDisplayName,
       status: newStatus,
       comment: dto.comment,
       isInternal: dto.isInternal ?? false,
@@ -586,7 +851,7 @@ export class TicketsService {
       );
     }
 
-    return this.findOneByCompany(companyId, ticketId, departmentScope);
+    return this.findOneByCompany(companyId, ticketId, scope);
   }
 
   private async ensureDepartmentInCompany(
@@ -599,6 +864,20 @@ export class TicketsService {
     if (!dept) {
       throw new BadRequestException(
         'Departamento inválido ou não pertence à sua empresa',
+      );
+    }
+  }
+
+  private async ensureActiveDepartmentInCompany(
+    companyId: string,
+    departmentId: string,
+  ): Promise<void> {
+    const dept = await this.departmentRepository.findOne({
+      where: { id: departmentId, companyId, status: 'ativo' },
+    });
+    if (!dept) {
+      throw new BadRequestException(
+        'Departamento de destino inválido ou inativo',
       );
     }
   }
@@ -674,6 +953,8 @@ export class TicketsService {
         userId: h.userId ?? undefined,
         citizenId: h.citizenId ?? undefined,
         isInternal: h.isInternal,
+        actorType: inferActorType(h),
+        actorDisplayName: fallbackActorDisplayName(h),
       }),
     );
 
@@ -692,6 +973,7 @@ export class TicketsService {
       shortDescription: ticket.shortDescription,
       detailedDescription: ticket.detailedDescription,
       departmentId: ticket.departmentId,
+      subDepartmentId: ticket.subDepartmentId ?? null,
       status: ticket.status,
       priority: ticket.priority,
       citizenName: ticket.citizenName,

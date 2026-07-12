@@ -31,6 +31,11 @@ export class ListTicketsQueryDto {
   @IsUUID()
   departmentId?: string;
 
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  subDepartmentId?: string;
+
   @ApiPropertyOptional({ enum: TicketPriority })
   @IsOptional()
   @IsEnum(TicketPriority)

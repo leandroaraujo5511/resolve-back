@@ -25,9 +25,13 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AllowPasswordChangePending } from '../common/decorators/allow-password-change-pending.decorator';
 import type { JwtPayload } from '../auth/interfaces/auth-user.interface';
 import { UsersService } from './users.service';
-import { AuthUserResponseDto } from '../auth/dto/auth-user.response';
+import {
+  AuthUserResponseDto,
+  CreateUserResponseDto,
+} from '../auth/dto/auth-user.response';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -44,6 +48,7 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOkResponse({ type: AuthUserResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token inválido ou expirado' })
+  @AllowPasswordChangePending()
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@CurrentUser() user: JwtPayload) {
@@ -70,10 +75,12 @@ export class UsersController {
 
   @ApiOperation({
     summary: 'Cria usuário no tenant (ADMIN)',
+    description:
+      'Opções sendWelcomeEmail e requirePasswordChange. Com boas-vindas, a senha é gerada e enviada por e-mail.',
   })
   @ApiBearerAuth()
   @ApiBody({ type: CreateUserDto })
-  @ApiOkResponse({ type: AuthUserResponseDto })
+  @ApiOkResponse({ type: CreateUserResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token inválido ou expirado' })
   @ApiBadRequestResponse({ description: 'Dados inválidos' })
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
@@ -81,6 +88,23 @@ export class UsersController {
   @Post()
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreateUserDto) {
     return this.usersService.createForPanel(user, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Reenvia e-mail de boas-vindas com nova senha provisória',
+  })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: CreateUserResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token inválido ou expirado' })
+  @ApiNotFoundResponse({ description: 'Usuário não encontrado' })
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Post(':id/resend-welcome')
+  resendWelcome(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.usersService.resendWelcomeForPanel(user, id);
   }
 
   @ApiOperation({

@@ -327,6 +327,11 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
           userId: adminUserId,
           citizenId: null,
           isInternal: h.isInternal,
+          actorType: 'USER',
+          actorDisplayName: this.configService.get<string>(
+            'SEED_ADMIN_NAME',
+            'Administrador Resolve',
+          ),
         });
         await this.ticketHistoryRepository.save(hist);
       }

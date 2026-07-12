@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -17,6 +18,7 @@ import { CatalogsModule } from './catalogs/catalogs.module';
 import { UploadModule } from './upload/upload.module';
 import { ReportsModule } from './reports/reports.module';
 import { AppIssuesModule } from './app-issues/app-issues.module';
+import { PasswordChangeRequiredInterceptor } from './common/interceptors/password-change-required.interceptor';
 
 @Module({
   imports: [
@@ -37,6 +39,12 @@ import { AppIssuesModule } from './app-issues/app-issues.module';
     AppIssuesModule,
   ],
   controllers: [AppController, SupportController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PasswordChangeRequiredInterceptor,
+    },
+  ],
 })
 export class AppModule {}

@@ -15,7 +15,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../database/entities/user.entity';
 import {
   resolvePanelCompanyId,
-  resolvePanelDepartmentScope,
+  resolvePanelDataScope,
 } from '../common/tenant-scope';
 import { ReportsQueryDto } from './dto/reports-query.dto';
 import { ReportsService } from './reports.service';
@@ -40,11 +40,11 @@ export class ReportsController {
     @Query() query: ReportsQueryDto,
   ) {
     const companyId = resolvePanelCompanyId(user, query.companyId);
-    const departmentScope = resolvePanelDepartmentScope(user);
+    const scope = resolvePanelDataScope(user);
     const dash = await this.reportsService.getDashboard(
       companyId,
       query,
-      departmentScope,
+      scope,
     );
     if (user.role === UserRole.SECRETARIA) {
       return {
@@ -72,11 +72,11 @@ export class ReportsController {
     @Query() query: ReportsQueryDto,
   ) {
     const companyId = resolvePanelCompanyId(user, query.companyId);
-    const departmentScope = resolvePanelDepartmentScope(user);
+    const scope = resolvePanelDataScope(user);
     return this.reportsService.exportTicketsFlat(
       companyId,
       query,
-      departmentScope,
+      scope,
     );
   }
 

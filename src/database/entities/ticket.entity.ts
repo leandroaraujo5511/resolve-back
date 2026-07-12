@@ -13,6 +13,7 @@ import { City } from './city.entity';
 import { Company } from './company.entity';
 import { Department } from './department.entity';
 import { Neighborhood } from './neighborhood.entity';
+import { SubDepartment } from './sub-department.entity';
 import { TicketHistory } from './ticket-history.entity';
 import { TicketPriority, TicketStatus } from './ticket.enums';
 
@@ -62,6 +63,14 @@ export class Ticket {
   @ManyToOne(() => Department, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'departmentId' })
   department: Department;
+
+  /** Subdepartamento opcional (Sprint 3). Tickets legados permanecem null. */
+  @Column({ type: 'uuid', nullable: true })
+  subDepartmentId: string | null;
+
+  @ManyToOne(() => SubDepartment, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'subDepartmentId' })
+  subDepartment: SubDepartment | null;
 
   @Column({ type: 'enum', enum: TicketStatus, default: TicketStatus.ABERTO })
   status: TicketStatus;

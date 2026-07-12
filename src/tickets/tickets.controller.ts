@@ -13,6 +13,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiConflictResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -24,12 +25,20 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/auth-user.interface';
 import {
   resolvePanelCompanyId,
-  resolvePanelDepartmentScope,
+  resolvePanelDataScope,
 } from '../common/tenant-scope';
 import { AddTicketHistoryDto } from './dto/add-ticket-history.dto';
 import { ListTicketsQueryDto } from './dto/list-tickets.query.dto';
 import { PatchTicketDto } from './dto/patch-ticket.dto';
-import { PaginatedTicketsResponseDto, TicketResponseDto } from './dto/ticket.response.dto';
+import { TransferTicketDto } from './dto/transfer-ticket.dto';
+import {
+  TransferOptionsResponseDto,
+  TransferTicketResponseDto,
+} from './dto/transfer-options.response.dto';
+import {
+  PaginatedTicketsResponseDto,
+  TicketResponseDto,
+} from './dto/ticket.response.dto';
 import { TicketsService } from './tickets.service';
 
 @ApiTags('Tickets')
@@ -52,11 +61,11 @@ export class TicketsController {
     @Query() query: ListTicketsQueryDto,
   ) {
     const companyId = resolvePanelCompanyId(user, query.companyId);
-    const departmentScope = resolvePanelDepartmentScope(user);
+    const scope = resolvePanelDataScope(user);
     return this.ticketsService.findAllPaginated(
       companyId,
       query,
-      departmentScope,
+      scope,
     );
   }
 
@@ -80,20 +89,73 @@ export class TicketsController {
     @Body() dto: AddTicketHistoryDto,
   ) {
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
-    const departmentScope = resolvePanelDepartmentScope(user);
+    const scope = resolvePanelDataScope(user);
     return this.ticketsService.addHistory(
       companyId,
       id,
       dto,
       user.sub,
-      departmentScope,
+      scope,
     );
   }
 
   @ApiOperation({
-    summary: 'Atualiza status e/ou departamento do chamado',
+    summary: 'Opções de destino para transferência (todos os depts ativos)',
     description:
-      'Gera uma entrada no histórico quando houver alteração efetiva. Departamento deve ser do mesmo tenant. SECRETARIA vinculada não pode transferir para outro departamento.',
+      'Inclui subdepartamentos ativos. Disponível para quem tem acesso de leitura ao ticket (inclui SECRETARIA escopada).',
+  })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: TransferOptionsResponseDto })
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/transfer-options')
+  transferOptions(
+    @CurrentUser() user: JwtPayload,
+    @Query('companyId') companyIdQuery: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const companyId = resolvePanelCompanyId(user, companyIdQuery);
+    const scope = resolvePanelDataScope(user);
+    return this.ticketsService.getTransferOptions(
+      companyId,
+      id,
+      scope,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Transfere o chamado para outro departamento',
+    description:
+      'Justificativa obrigatória (≥10). Subdepartamento obrigatório se o destino tiver subdepts ativos (RN-047a). SECRETARIA escopada pode transferir para qualquer dept ativo e perde o acesso em seguida.',
+  })
+  @ApiBearerAuth()
+  @ApiBody({ type: TransferTicketDto })
+  @ApiOkResponse({ type: TransferTicketResponseDto })
+  @ApiConflictResponse({ description: 'Concorrência (expectedUpdatedAt)' })
+  @ApiBadRequestResponse()
+  @ApiNotFoundResponse()
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/transfer')
+  transfer(
+    @CurrentUser() user: JwtPayload,
+    @Query('companyId') companyIdQuery: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TransferTicketDto,
+  ) {
+    const companyId = resolvePanelCompanyId(user, companyIdQuery);
+    const scope = resolvePanelDataScope(user);
+    return this.ticketsService.transferTicket(
+      companyId,
+      id,
+      dto,
+      user.sub,
+      scope,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Atualiza status e/ou prioridade do chamado',
+    description:
+      'Para trocar departamento, use POST /tickets/:id/transfer. SECRETARIA vinculada só altera tickets do próprio departamento.',
   })
   @ApiBearerAuth()
   @ApiBody({ type: PatchTicketDto })
@@ -112,13 +174,13 @@ export class TicketsController {
     @Body() dto: PatchTicketDto,
   ) {
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
-    const departmentScope = resolvePanelDepartmentScope(user);
+    const scope = resolvePanelDataScope(user);
     return this.ticketsService.patchTicket(
       companyId,
       id,
       dto,
       user.sub,
-      departmentScope,
+      scope,
     );
   }
 
@@ -139,11 +201,11 @@ export class TicketsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     const companyId = resolvePanelCompanyId(user, companyIdQuery);
-    const departmentScope = resolvePanelDepartmentScope(user);
+    const scope = resolvePanelDataScope(user);
     return this.ticketsService.findOneByCompany(
       companyId,
       id,
-      departmentScope,
+      scope,
     );
   }
 }

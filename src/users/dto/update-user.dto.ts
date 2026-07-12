@@ -1,5 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { UserRole } from '../../database/entities/user.entity';
 
 const PANEL_ASSIGNABLE_ROLES = [UserRole.ADMIN, UserRole.SECRETARIA] as const;
@@ -39,8 +48,19 @@ export class UpdateUserDto {
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== '')
   @IsUUID()
-  departmentId?: string;
+  departmentId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'null limpa o vínculo ao subdepartamento',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== '')
+  @IsUUID()
+  subDepartmentId?: string | null;
 
   @ApiPropertyOptional({ enum: ['ativo', 'inativo'] })
   @IsOptional()
@@ -48,4 +68,3 @@ export class UpdateUserDto {
   @IsIn(['ativo', 'inativo'])
   status?: 'ativo' | 'inativo';
 }
-
